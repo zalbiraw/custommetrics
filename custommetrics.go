@@ -50,6 +50,28 @@ type MetricsStore struct {
 	metrics map[string]*Metric
 }
 
+// responseWriter wraps http.ResponseWriter to capture response headers.
+type responseWriter struct {
+	http.ResponseWriter
+	headerWritten bool
+}
+
+// WriteHeader writes the status code and ensures headers are written only once.
+func (rw *responseWriter) WriteHeader(statusCode int) {
+	if !rw.headerWritten {
+		rw.headerWritten = true
+		rw.ResponseWriter.WriteHeader(statusCode)
+	}
+}
+
+// Write writes data to the response and ensures headers are written.
+func (rw *responseWriter) Write(data []byte) (int, error) {
+	if !rw.headerWritten {
+		rw.WriteHeader(http.StatusOK)
+	}
+	return rw.ResponseWriter.Write(data)
+}
+
 // CustomMetrics a custom metrics plugin.
 type CustomMetrics struct {
 	next          http.Handler
@@ -164,8 +186,8 @@ func (c *CustomMetrics) startMetricsServer() error {
 	return nil
 }
 
-// collectMetrics collects metrics based on the configured headers (optimized).
-func (c *CustomMetrics) collectMetrics(req *http.Request) {
+// collectMetrics collects metrics based on the configured headers from both request and response.
+func (c *CustomMetrics) collectMetrics(req *http.Request, responseHeaders http.Header) {
 	if len(c.metricHeaders) == 0 {
 		return
 	}
@@ -178,10 +200,16 @@ func (c *CustomMetrics) collectMetrics(req *http.Request) {
 		return
 	}
 
-	// Fast path for counters - just check if any header exists
+	// Fast path for counters - check if any header exists in request OR response
 	if c.metricType == MetricTypeCounter {
 		for _, headerName := range c.metricHeaders {
+			// Check request headers first
 			if req.Header.Get(headerName) != "" {
+				metric.Value++
+				return // Only increment once per request
+			}
+			// Check response headers
+			if responseHeaders.Get(headerName) != "" {
 				metric.Value++
 				return // Only increment once per request
 			}
@@ -191,12 +219,29 @@ func (c *CustomMetrics) collectMetrics(req *http.Request) {
 
 	// For histograms and gauges, parse the first numeric header found
 	var value float64 = 1 // Default value
+	found := false
+
+	// Check request headers first
 	for _, headerName := range c.metricHeaders {
 		headerValue := req.Header.Get(headerName)
 		if headerValue != "" {
 			if parsedValue, err := strconv.ParseFloat(headerValue, 64); err == nil {
 				value = parsedValue
+				found = true
 				break // Use first valid numeric value
+			}
+		}
+	}
+
+	// Check response headers if no numeric value found in request
+	if !found {
+		for _, headerName := range c.metricHeaders {
+			headerValue := responseHeaders.Get(headerName)
+			if headerValue != "" {
+				if parsedValue, err := strconv.ParseFloat(headerValue, 64); err == nil {
+					value = parsedValue
+					break // Use first valid numeric value
+				}
 			}
 		}
 	}
@@ -208,10 +253,14 @@ func (c *CustomMetrics) collectMetrics(req *http.Request) {
 	}
 }
 
+// ServeHTTP processes HTTP requests and collects metrics based on both request and response headers.
 func (c *CustomMetrics) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	// Collect metrics based on configured headers
-	c.collectMetrics(req)
+	// Wrap the response writer to capture response headers
+	wrappedRW := &responseWriter{ResponseWriter: rw}
 
-	// Pass request to next handler
-	c.next.ServeHTTP(rw, req)
+	// Pass request to next handler with wrapped response writer
+	c.next.ServeHTTP(wrappedRW, req)
+
+	// Collect metrics based on configured headers from both request and response
+	c.collectMetrics(req, wrappedRW.Header())
 }

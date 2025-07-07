@@ -75,6 +75,48 @@ func TestMetrics(t *testing.T) {
 	}
 }
 
+func TestCombinedRequestResponseHeaders(t *testing.T) {
+	cfg := CreateConfig()
+	cfg.MetricHeaders = []string{"X-User-ID", "X-Response-ID"}
+	cfg.MetricName = "combined_test_counter"
+	cfg.MetricType = "counter"
+	cfg.MetricsPort = 8083
+
+	ctx := context.Background()
+	next := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		// Set response header
+		rw.Header().Set("X-Response-ID", "resp123")
+		rw.WriteHeader(http.StatusOK)
+	})
+
+	handler, err := New(ctx, next, cfg, "combined-test-plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+
+	// Test 1: Request header only
+	req1, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req1.Header.Set("X-User-ID", "user123")
+	handler.ServeHTTP(recorder, req1)
+
+	// Test 2: Response header only
+	recorder2 := httptest.NewRecorder()
+	req2, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler.ServeHTTP(recorder2, req2)
+
+	if recorder.Code != 200 || recorder2.Code != 200 {
+		t.Errorf("expected status 200, got %d and %d", recorder.Code, recorder2.Code)
+	}
+}
+
 func BenchmarkCustomMetrics(b *testing.B) {
 	cfg := CreateConfig()
 	cfg.MetricHeaders = []string{"X-User-ID"}
