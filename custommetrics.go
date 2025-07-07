@@ -11,10 +11,11 @@ import (
 	"time"
 )
 
+// Metric type constants.
 const (
-	MetricTypeCounter   = "counter"
-	MetricTypeHistogram = "histogram"
-	MetricTypeGauge     = "gauge"
+	MetricTypeCounter   = "counter"   // MetricTypeCounter represents a counter metric.
+	MetricTypeHistogram = "histogram" // MetricTypeHistogram represents a histogram metric.
+	MetricTypeGauge     = "gauge"     // MetricTypeGauge represents a gauge metric.
 )
 
 // Config the plugin configuration.
