@@ -1,16 +1,14 @@
-package custommetrics_test
+package custommetrics
 
 import (
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/traefik/custommetrics"
 )
 
 func TestMetricsOnly(t *testing.T) {
-	cfg := custommetrics.CreateConfig()
+	cfg := CreateConfig()
 	cfg.MetricHeaders = []string{"X-User-ID"}
 	cfg.MetricName = "test_counter"
 	cfg.MetricType = "counter"
@@ -21,7 +19,7 @@ func TestMetricsOnly(t *testing.T) {
 		rw.WriteHeader(http.StatusOK)
 	})
 
-	handler, err := custommetrics.New(ctx, next, cfg, "test-plugin")
+	handler, err := New(ctx, next, cfg, "test-plugin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +40,7 @@ func TestMetricsOnly(t *testing.T) {
 }
 
 func TestMetrics(t *testing.T) {
-	cfg := custommetrics.CreateConfig()
+	cfg := CreateConfig()
 	cfg.MetricHeaders = []string{"X-User-ID", "X-Request-Size"}
 	cfg.MetricName = "test_counter"
 	cfg.MetricType = "counter"
@@ -53,7 +51,7 @@ func TestMetrics(t *testing.T) {
 		rw.WriteHeader(http.StatusOK)
 	})
 
-	handler, err := custommetrics.New(ctx, next, cfg, "metrics-plugin")
+	handler, err := New(ctx, next, cfg, "metrics-plugin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +76,7 @@ func TestMetrics(t *testing.T) {
 }
 
 func BenchmarkCustomMetrics(b *testing.B) {
-	cfg := custommetrics.CreateConfig()
+	cfg := CreateConfig()
 	cfg.MetricHeaders = []string{"X-User-ID"}
 	cfg.MetricName = "benchmark_counter"
 	cfg.MetricType = "counter"
@@ -89,7 +87,7 @@ func BenchmarkCustomMetrics(b *testing.B) {
 		rw.WriteHeader(http.StatusOK)
 	})
 
-	handler, err := custommetrics.New(ctx, next, cfg, "benchmark-plugin")
+	handler, err := New(ctx, next, cfg, "benchmark-plugin")
 	if err != nil {
 		b.Fatal(err)
 	}
