@@ -1,12 +1,13 @@
-displayName: Demo Plugin
+displayName: Custom Metrics Plugin
 type: middleware
-iconPath: .assets/icon.png
 
-import: github.com/traefik/plugindemo
+import: github.com/traefik/custommetrics
 
-summary: '[Demo] Add Request Header'
+summary: 'Collects Prometheus metrics based on HTTP headers'
 
 testData:
-  Headers:
-    X-Demo: test
-    X-URL: '{{URL}}'
+  metricHeaders:
+    - X-User-ID
+  metricName: test_requests
+  metricType: counter
+  metricsPort: 8081

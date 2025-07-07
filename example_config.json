@@ -1,0 +1,6 @@
+{
+  "metricHeaders": ["X-User-ID", "X-Request-Size"],
+  "metricName": "custom_http_requests_total",
+  "metricType": "counter",
+  "metricsPort": 8081
+}
