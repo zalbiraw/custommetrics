@@ -1,7 +1,7 @@
 displayName: Custom Metrics Plugin
 type: middleware
 
-import: github.com/traefik/custommetrics
+import: github.com/zalbiraw/custommetrics
 
 summary: 'Collects Prometheus metrics based on HTTP headers'
 

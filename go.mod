@@ -1,3 +1,3 @@
-module github.com/traefik/custommetrics
+module github.com/zalbiraw/custommetrics
 
 go 1.19
