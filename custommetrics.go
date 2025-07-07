@@ -17,7 +17,7 @@ import (
 type Config struct {
 	MetricHeaders []string `json:"metricHeaders,omitempty"`
 	MetricName    string   `json:"metricName,omitempty"`
-	MetricType    string   `json:"metricType,omitempty"` // "counter", "histogram", "gauge"
+	MetricType    string   `json:"metricType,omitempty"`  // "counter", "histogram", "gauge"
 	MetricsPort   int      `json:"metricsPort,omitempty"` // Port for metrics endpoint
 }
 
