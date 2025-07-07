@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -82,7 +83,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	return plugin, nil
 }
 
-// Stop gracefully shuts down the metrics server
+// Stop gracefully shuts down the metrics server.
 func (c *CustomMetrics) Stop() error {
 	if c.server != nil {
 		close(c.serverStop)
@@ -92,7 +93,7 @@ func (c *CustomMetrics) Stop() error {
 	return nil
 }
 
-// initializeMetrics initializes Prometheus metrics
+// initializeMetrics initializes Prometheus metrics.
 func (c *CustomMetrics) initializeMetrics() error {
 	switch c.metricType {
 	case "counter":
@@ -119,7 +120,7 @@ func (c *CustomMetrics) initializeMetrics() error {
 	return nil
 }
 
-// startMetricsServer starts the metrics HTTP server with port conflict detection
+// startMetricsServer starts the metrics HTTP server with port conflict detection.
 func (c *CustomMetrics) startMetricsServer() error {
 	addr := fmt.Sprintf(":%d", c.metricsPort)
 	
@@ -133,8 +134,9 @@ func (c *CustomMetrics) startMetricsServer() error {
 	mux.Handle("/metrics", promhttp.HandlerFor(c.registry, promhttp.HandlerOpts{}))
 	
 	c.server = &http.Server{
-		Addr:    addr,
-		Handler: mux,
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 	
 	// Start server in background with graceful shutdown
@@ -150,7 +152,7 @@ func (c *CustomMetrics) startMetricsServer() error {
 	return nil
 }
 
-// collectMetrics collects metrics based on the configured headers (optimized)
+// collectMetrics collects metrics based on the configured headers (optimized).
 func (c *CustomMetrics) collectMetrics(req *http.Request) {
 	if len(c.metricHeaders) == 0 {
 		return
