@@ -39,16 +39,16 @@ type CustomMetrics struct {
 	metricType    string
 	metricsPort   int
 	name          string
-	
+
 	// Prometheus metrics
 	counter   prometheus.Counter
 	histogram prometheus.Histogram
 	gauge     prometheus.Gauge
-	
+
 	// Metrics registry and server management
-	registry     *prometheus.Registry
-	server       *http.Server
-	serverStop   chan struct{}
+	registry      *prometheus.Registry
+	server        *http.Server
+	serverStop    chan struct{}
 	serverStopped chan struct{}
 }
 
@@ -74,7 +74,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	if err := plugin.initializeMetrics(); err != nil {
 		return nil, fmt.Errorf("failed to initialize metrics: %w", err)
 	}
-	
+
 	// Start metrics server with port conflict detection
 	if err := plugin.startMetricsServer(); err != nil {
 		return nil, fmt.Errorf("failed to start metrics server: %w", err)
@@ -123,32 +123,32 @@ func (c *CustomMetrics) initializeMetrics() error {
 // startMetricsServer starts the metrics HTTP server with port conflict detection.
 func (c *CustomMetrics) startMetricsServer() error {
 	addr := fmt.Sprintf(":%d", c.metricsPort)
-	
+
 	// Check if port is available (port 0 means random available port)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("port %d is already in use: %w", c.metricsPort, err)
 	}
-	
+
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(c.registry, promhttp.HandlerOpts{}))
-	
+
 	c.server = &http.Server{
 		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	
+
 	// Start server in background with graceful shutdown
 	go func() {
 		defer close(c.serverStopped)
-		
+
 		if err := c.server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			// Log error but don't crash the plugin
 			fmt.Printf("Metrics server error: %v\n", err)
 		}
 	}()
-	
+
 	return nil
 }
 
