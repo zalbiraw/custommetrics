@@ -186,6 +186,39 @@ func (c *CustomMetrics) startMetricsServer() error {
 	return nil
 }
 
+// hasHeaderInRequestOrResponse checks if any of the specified headers exist in request or response.
+func (c *CustomMetrics) hasHeaderInRequestOrResponse(req *http.Request, responseHeaders http.Header) bool {
+	for _, headerName := range c.metricHeaders {
+		if req.Header.Get(headerName) != "" || responseHeaders.Get(headerName) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// getNumericValueFromHeaders extracts the first numeric value from headers, checking request first then response.
+func (c *CustomMetrics) getNumericValueFromHeaders(req *http.Request, responseHeaders http.Header) float64 {
+	// Check request headers first
+	for _, headerName := range c.metricHeaders {
+		if headerValue := req.Header.Get(headerName); headerValue != "" {
+			if parsedValue, err := strconv.ParseFloat(headerValue, 64); err == nil {
+				return parsedValue
+			}
+		}
+	}
+
+	// Check response headers if no numeric value found in request
+	for _, headerName := range c.metricHeaders {
+		if headerValue := responseHeaders.Get(headerName); headerValue != "" {
+			if parsedValue, err := strconv.ParseFloat(headerValue, 64); err == nil {
+				return parsedValue
+			}
+		}
+	}
+
+	return 1 // Default value
+}
+
 // collectMetrics collects metrics based on the configured headers from both request and response.
 func (c *CustomMetrics) collectMetrics(req *http.Request, responseHeaders http.Header) {
 	if len(c.metricHeaders) == 0 {
@@ -200,56 +233,13 @@ func (c *CustomMetrics) collectMetrics(req *http.Request, responseHeaders http.H
 		return
 	}
 
-	// Fast path for counters - check if any header exists in request OR response
-	if c.metricType == MetricTypeCounter {
-		for _, headerName := range c.metricHeaders {
-			// Check request headers first
-			if req.Header.Get(headerName) != "" {
-				metric.Value++
-				return // Only increment once per request
-			}
-			// Check response headers
-			if responseHeaders.Get(headerName) != "" {
-				metric.Value++
-				return // Only increment once per request
-			}
-		}
-		return
-	}
-
-	// For histograms and gauges, parse the first numeric header found
-	var value float64 = 1 // Default value
-	found := false
-
-	// Check request headers first
-	for _, headerName := range c.metricHeaders {
-		headerValue := req.Header.Get(headerName)
-		if headerValue != "" {
-			if parsedValue, err := strconv.ParseFloat(headerValue, 64); err == nil {
-				value = parsedValue
-				found = true
-				break // Use first valid numeric value
-			}
-		}
-	}
-
-	// Check response headers if no numeric value found in request
-	if !found {
-		for _, headerName := range c.metricHeaders {
-			headerValue := responseHeaders.Get(headerName)
-			if headerValue != "" {
-				if parsedValue, err := strconv.ParseFloat(headerValue, 64); err == nil {
-					value = parsedValue
-					break // Use first valid numeric value
-				}
-			}
-		}
-	}
-
-	// Record metrics
 	switch c.metricType {
+	case MetricTypeCounter:
+		if c.hasHeaderInRequestOrResponse(req, responseHeaders) {
+			metric.Value++
+		}
 	case MetricTypeHistogram, MetricTypeGauge:
-		metric.Value = value
+		metric.Value = c.getNumericValueFromHeaders(req, responseHeaders)
 	}
 }
 
