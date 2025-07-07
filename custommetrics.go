@@ -11,6 +11,12 @@ import (
 	"time"
 )
 
+const (
+	MetricTypeCounter   = "counter"
+	MetricTypeHistogram = "histogram"
+	MetricTypeGauge     = "gauge"
+)
+
 // Config the plugin configuration.
 type Config struct {
 	MetricHeaders []string `json:"metricHeaders,omitempty"`
@@ -24,7 +30,7 @@ func CreateConfig() *Config {
 	return &Config{
 		MetricHeaders: []string{},
 		MetricName:    "plugin_custom_requests",
-		MetricType:    "counter",
+		MetricType:    MetricTypeCounter,
 		MetricsPort:   8081,
 	}
 }
@@ -172,7 +178,7 @@ func (c *CustomMetrics) collectMetrics(req *http.Request) {
 	}
 
 	// Fast path for counters - just check if any header exists
-	if c.metricType == "counter" {
+	if c.metricType == MetricTypeCounter {
 		for _, headerName := range c.metricHeaders {
 			if req.Header.Get(headerName) != "" {
 				metric.Value++
@@ -196,7 +202,7 @@ func (c *CustomMetrics) collectMetrics(req *http.Request) {
 
 	// Record metrics
 	switch c.metricType {
-	case "histogram", "gauge":
+	case MetricTypeHistogram, MetricTypeGauge:
 		metric.Value = value
 	}
 }
