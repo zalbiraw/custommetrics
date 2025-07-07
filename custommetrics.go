@@ -7,10 +7,8 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Config the plugin configuration.
@@ -31,6 +29,20 @@ func CreateConfig() *Config {
 	}
 }
 
+// Metric represents a simple metric with value and labels.
+type Metric struct {
+	Name   string            `json:"name"`
+	Type   string            `json:"type"`
+	Value  float64           `json:"value"`
+	Labels map[string]string `json:"labels,omitempty"`
+}
+
+// MetricsStore holds all collected metrics.
+type MetricsStore struct {
+	mu      sync.RWMutex
+	metrics map[string]*Metric
+}
+
 // CustomMetrics a custom metrics plugin.
 type CustomMetrics struct {
 	next          http.Handler
@@ -40,13 +52,8 @@ type CustomMetrics struct {
 	metricsPort   int
 	name          string
 
-	// Prometheus metrics
-	counter   prometheus.Counter
-	histogram prometheus.Histogram
-	gauge     prometheus.Gauge
-
-	// Metrics registry and server management
-	registry      *prometheus.Registry
+	// Simple metrics storage
+	store         *MetricsStore
 	server        *http.Server
 	serverStop    chan struct{}
 	serverStopped chan struct{}
@@ -65,14 +72,19 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		metricsPort:   config.MetricsPort,
 		next:          next,
 		name:          name,
-		registry:      prometheus.NewRegistry(),
+		store: &MetricsStore{
+			metrics: make(map[string]*Metric),
+		},
 		serverStop:    make(chan struct{}),
 		serverStopped: make(chan struct{}),
 	}
 
-	// Initialize metrics
-	if err := plugin.initializeMetrics(); err != nil {
-		return nil, fmt.Errorf("failed to initialize metrics: %w", err)
+	// Initialize metric in store
+	plugin.store.metrics[config.MetricName] = &Metric{
+		Name:   config.MetricName,
+		Type:   config.MetricType,
+		Value:  0,
+		Labels: make(map[string]string),
 	}
 
 	// Start metrics server with port conflict detection
@@ -93,31 +105,21 @@ func (c *CustomMetrics) Stop() error {
 	return nil
 }
 
-// initializeMetrics initializes Prometheus metrics.
-func (c *CustomMetrics) initializeMetrics() error {
-	switch c.metricType {
-	case "counter":
-		c.counter = prometheus.NewCounter(prometheus.CounterOpts{
-			Name: c.metricName,
-			Help: "Custom counter metric based on HTTP headers",
-		})
-		c.registry.MustRegister(c.counter)
-	case "histogram":
-		c.histogram = prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: c.metricName,
-			Help: "Custom histogram metric based on HTTP headers",
-		})
-		c.registry.MustRegister(c.histogram)
-	case "gauge":
-		c.gauge = prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: c.metricName,
-			Help: "Custom gauge metric based on HTTP headers",
-		})
-		c.registry.MustRegister(c.gauge)
-	default:
-		return fmt.Errorf("unsupported metric type: %s", c.metricType)
+// renderPrometheusFormat renders metrics in Prometheus text format.
+func (c *CustomMetrics) renderPrometheusFormat() string {
+	c.store.mu.RLock()
+	defer c.store.mu.RUnlock()
+
+	var output string
+	for _, metric := range c.store.metrics {
+		// Add HELP and TYPE comments
+		output += fmt.Sprintf("# HELP %s Custom metric based on HTTP headers\n", metric.Name)
+		output += fmt.Sprintf("# TYPE %s %s\n", metric.Name, metric.Type)
+
+		// Add metric value
+		output += fmt.Sprintf("%s %.0f\n", metric.Name, metric.Value)
 	}
-	return nil
+	return output
 }
 
 // startMetricsServer starts the metrics HTTP server with port conflict detection.
@@ -131,7 +133,10 @@ func (c *CustomMetrics) startMetricsServer() error {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.HandlerFor(c.registry, promhttp.HandlerOpts{}))
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		fmt.Fprint(w, c.renderPrometheusFormat())
+	})
 
 	c.server = &http.Server{
 		Addr:              addr,
@@ -158,11 +163,19 @@ func (c *CustomMetrics) collectMetrics(req *http.Request) {
 		return
 	}
 
+	c.store.mu.Lock()
+	defer c.store.mu.Unlock()
+
+	metric := c.store.metrics[c.metricName]
+	if metric == nil {
+		return
+	}
+
 	// Fast path for counters - just check if any header exists
 	if c.metricType == "counter" {
 		for _, headerName := range c.metricHeaders {
 			if req.Header.Get(headerName) != "" {
-				c.counter.Inc()
+				metric.Value++
 				return // Only increment once per request
 			}
 		}
@@ -183,14 +196,8 @@ func (c *CustomMetrics) collectMetrics(req *http.Request) {
 
 	// Record metrics
 	switch c.metricType {
-	case "histogram":
-		if c.histogram != nil {
-			c.histogram.Observe(value)
-		}
-	case "gauge":
-		if c.gauge != nil {
-			c.gauge.Set(value)
-		}
+	case "histogram", "gauge":
+		metric.Value = value
 	}
 }
 
