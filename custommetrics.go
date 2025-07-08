@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -108,13 +109,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		serverStopped: make(chan struct{}),
 	}
 
-	// Initialize metric in store
-	plugin.store.metrics[config.MetricName] = &Metric{
-		Name:   config.MetricName,
-		Type:   config.MetricType,
-		Value:  0,
-		Labels: make(map[string]string),
-	}
+	// Metrics will be created dynamically as requests come in
 
 	// Start metrics server with port conflict detection
 	if err := plugin.startMetricsServer(); err != nil {
@@ -140,13 +135,27 @@ func (c *CustomMetrics) renderPrometheusFormat() string {
 	defer c.store.mu.RUnlock()
 
 	var output string
+	helpAdded := false
+	
 	for _, metric := range c.store.metrics {
-		// Add HELP and TYPE comments
-		output += fmt.Sprintf("# HELP %s Custom metric based on HTTP headers\n", metric.Name)
-		output += fmt.Sprintf("# TYPE %s %s\n", metric.Name, metric.Type)
+		// Add HELP and TYPE comments only once per metric name
+		if !helpAdded {
+			output += fmt.Sprintf("# HELP %s Custom metric based on HTTP headers\n", metric.Name)
+			output += fmt.Sprintf("# TYPE %s %s\n", metric.Name, metric.Type)
+			helpAdded = true
+		}
 
-		// Add metric value
-		output += fmt.Sprintf("%s %.0f\n", metric.Name, metric.Value)
+		// Format metric with labels
+		metricLine := metric.Name
+		if len(metric.Labels) > 0 {
+			labelPairs := make([]string, 0, len(metric.Labels))
+			for k, v := range metric.Labels {
+				labelPairs = append(labelPairs, fmt.Sprintf("%s=\"%s\"", k, v))
+			}
+			metricLine += fmt.Sprintf("{%s}", strings.Join(labelPairs, ","))
+		}
+		
+		output += fmt.Sprintf("%s %.0f\n", metricLine, metric.Value)
 	}
 	return output
 }
@@ -219,25 +228,57 @@ func (c *CustomMetrics) getNumericValueFromHeaders(req *http.Request, responseHe
 	return 1 // Default value
 }
 
-// collectMetrics collects metrics based on the configured headers from both request and response.
-func (c *CustomMetrics) collectMetrics(req *http.Request, responseHeaders http.Header) {
-	if len(c.metricHeaders) == 0 {
-		return
+// createMetricKey creates a unique key for a metric with labels.
+func (c *CustomMetrics) createMetricKey(metricName string, labels map[string]string) string {
+	key := metricName
+	for k, v := range labels {
+		key += fmt.Sprintf("_%s_%s", k, v)
 	}
+	return key
+}
 
+// collectMetrics collects metrics for every request, using header values as labels.
+func (c *CustomMetrics) collectMetrics(req *http.Request, responseHeaders http.Header) {
 	c.store.mu.Lock()
 	defer c.store.mu.Unlock()
 
-	metric := c.store.metrics[c.metricName]
-	if metric == nil {
-		return
+	// Collect header values as labels
+	labels := make(map[string]string)
+	for _, headerName := range c.metricHeaders {
+		// Check request headers first
+		if value := req.Header.Get(headerName); value != "" {
+			labels[headerName] = value
+		} else if value := responseHeaders.Get(headerName); value != "" {
+			// Check response headers if not found in request
+			labels[headerName] = value
+		} else {
+			// Use empty string for missing headers
+			labels[headerName] = ""
+		}
 	}
 
+	// Create a unique metric key based on labels
+	metricKey := c.metricName
+	if len(labels) > 0 {
+		metricKey = c.createMetricKey(c.metricName, labels)
+	}
+
+	// Get or create metric with labels
+	metric := c.store.metrics[metricKey]
+	if metric == nil {
+		metric = &Metric{
+			Name:   c.metricName,
+			Type:   c.metricType,
+			Value:  0,
+			Labels: labels,
+		}
+		c.store.metrics[metricKey] = metric
+	}
+
+	// Update metric value
 	switch c.metricType {
 	case MetricTypeCounter:
-		if c.hasHeaderInRequestOrResponse(req, responseHeaders) {
-			metric.Value++
-		}
+		metric.Value++ // Count every request
 	case MetricTypeHistogram, MetricTypeGauge:
 		metric.Value = c.getNumericValueFromHeaders(req, responseHeaders)
 	}
