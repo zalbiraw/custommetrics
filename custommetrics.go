@@ -136,7 +136,7 @@ func (c *CustomMetrics) renderPrometheusFormat() string {
 
 	var output string
 	helpAdded := false
-	
+
 	for _, metric := range c.store.metrics {
 		// Add HELP and TYPE comments only once per metric name
 		if !helpAdded {
@@ -154,7 +154,7 @@ func (c *CustomMetrics) renderPrometheusFormat() string {
 			}
 			metricLine += fmt.Sprintf("{%s}", strings.Join(labelPairs, ","))
 		}
-		
+
 		output += fmt.Sprintf("%s %.0f\n", metricLine, metric.Value)
 	}
 	return output
@@ -193,16 +193,6 @@ func (c *CustomMetrics) startMetricsServer() error {
 	}()
 
 	return nil
-}
-
-// hasHeaderInRequestOrResponse checks if any of the specified headers exist in request or response.
-func (c *CustomMetrics) hasHeaderInRequestOrResponse(req *http.Request, responseHeaders http.Header) bool {
-	for _, headerName := range c.metricHeaders {
-		if req.Header.Get(headerName) != "" || responseHeaders.Get(headerName) != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // getNumericValueFromHeaders extracts the first numeric value from headers, checking request first then response.

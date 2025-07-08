@@ -125,7 +125,10 @@ func TestCombinedRequestResponseHeaders(t *testing.T) {
 	}
 
 	// Check that metrics are being created with different labels
-	plugin := handler.(*CustomMetrics)
+	plugin, ok := handler.(*CustomMetrics)
+	if !ok {
+		t.Fatal("handler is not a CustomMetrics instance")
+	}
 	plugin.store.mu.RLock()
 	metricsCount := len(plugin.store.metrics)
 	plugin.store.mu.RUnlock()
@@ -133,7 +136,7 @@ func TestCombinedRequestResponseHeaders(t *testing.T) {
 	if metricsCount == 0 {
 		t.Error("expected metrics to be created")
 	}
-	
+
 	t.Logf("Created %d different metric series", metricsCount)
 
 	// Print the Prometheus format to see the labels
