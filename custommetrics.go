@@ -229,20 +229,20 @@ func (c *CustomMetrics) createMetricKey(metricName string, labels map[string]str
 }
 
 // sanitizePrometheusLabelName converts header names to valid Prometheus label names.
-// Prometheus label names must match [a-zA-Z_][a-zA-Z0-9_]*
+// Prometheus label names must match [a-zA-Z_][a-zA-Z0-9_]*.
 func sanitizePrometheusLabelName(headerName string) string {
 	// Replace hyphens with underscores
 	sanitized := strings.ReplaceAll(headerName, "-", "_")
-	
+
 	// Replace any other invalid characters with underscores
 	reg := regexp.MustCompile(`[^a-zA-Z0-9_]`)
 	sanitized = reg.ReplaceAllString(sanitized, "_")
-	
+
 	// Ensure it starts with a letter or underscore
 	if len(sanitized) > 0 && sanitized[0] >= '0' && sanitized[0] <= '9' {
 		sanitized = "_" + sanitized
 	}
-	
+
 	// Convert to lowercase for consistency
 	return strings.ToLower(sanitized)
 }
@@ -257,7 +257,7 @@ func (c *CustomMetrics) collectMetrics(req *http.Request, responseHeaders http.H
 	for _, headerName := range c.metricHeaders {
 		// Sanitize header name for Prometheus label compatibility
 		labelName := sanitizePrometheusLabelName(headerName)
-		
+
 		// Check request headers first
 		if value := req.Header.Get(headerName); value != "" {
 			labels[labelName] = value
