@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -142,6 +143,54 @@ func TestCombinedRequestResponseHeaders(t *testing.T) {
 	// Print the Prometheus format to see the labels
 	prometheusOutput := plugin.renderPrometheusFormat()
 	t.Logf("Prometheus output:\n%s", prometheusOutput)
+}
+
+func TestLabelNameSanitization(t *testing.T) {
+	cfg := CreateConfig()
+	cfg.MetricHeaders = []string{"X-User-ID", "Content-Type", "123-Invalid"}
+	cfg.MetricName = "sanitization_test"
+	cfg.MetricType = "counter"
+	cfg.MetricsPort = 8086
+
+	ctx := context.Background()
+	next := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.WriteHeader(http.StatusOK)
+	})
+
+	handler, err := New(ctx, next, cfg, "sanitization-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-User-ID", "user123")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("123-Invalid", "test")
+
+	handler.ServeHTTP(recorder, req)
+
+	plugin, ok := handler.(*CustomMetrics)
+	if !ok {
+		t.Fatal("handler is not a CustomMetrics instance")
+	}
+
+	prometheusOutput := plugin.renderPrometheusFormat()
+	t.Logf("Sanitized Prometheus output:\n%s", prometheusOutput)
+
+	// Verify that label names are properly sanitized
+	if !strings.Contains(prometheusOutput, "x_user_id=") {
+		t.Error("Expected sanitized label x_user_id not found")
+	}
+	if !strings.Contains(prometheusOutput, "content_type=") {
+		t.Error("Expected sanitized label content_type not found")
+	}
+	if !strings.Contains(prometheusOutput, "_123_invalid=") {
+		t.Error("Expected sanitized label _123_invalid not found")
+	}
 }
 
 func BenchmarkCustomMetrics(b *testing.B) {
